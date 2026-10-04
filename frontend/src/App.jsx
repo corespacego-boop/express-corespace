@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './index.css';
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
+const API_BASE = import.meta.env.VITE_API_BASE || "https://express-corespace.getvoroa.com";
 
 export default function App() {
   const [captchaImage, setCaptchaImage] = useState(null);
