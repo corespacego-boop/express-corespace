@@ -635,20 +635,27 @@ function parseAcademiaProfile(html) {
   if (!html) return {};
   const $ = cheerio.load(html);
   const profile = {};
-  $("tr, div, table").each((_, el) => {
+  $("td, th, tr, div, li, span").each((_, el) => {
     const txt = $(el).text().trim().replace(/\s+/g, " ");
     if (txt.includes(":")) {
-      const parts = txt.split(":");
-      const key = parts[0].trim().toLowerCase();
-      const val = parts.slice(1).join(":").trim();
+      const idx = txt.indexOf(":");
+      const key = txt.substring(0, idx).trim().toLowerCase();
+      const val = txt.substring(idx + 1).trim();
+
+      if (!val || val.length > 100) return;
+
       if (key.includes("section")) profile.section = val;
       else if (key.includes("batch")) profile.batch = val;
-      else if (key.includes("semester")) profile.semester = val;
-      else if (key.includes("department") || key.includes("dept")) profile.dept = val;
-      else if (key.includes("program")) profile.program = val;
-      else if (key.includes("name")) profile.name = val;
-      else if (key.includes("register no") || key.includes("regno")) profile.regNo = val;
-      else if (key.includes("mobile")) profile.mobile = val;
+      else if (key.includes("semester") || key.includes("sem")) profile.semester = val;
+      else if (key.includes("department") || key.includes("dept") || key.includes("institution")) profile.dept = val;
+      else if (key.includes("program") || key.includes("degree")) profile.program = val;
+      else if (key.includes("name") && !key.includes("advisor") && !key.includes("counselor")) profile.name = val;
+      else if (key.includes("register no") || key.includes("reg") || key.includes("roll")) profile.regNo = val;
+      else if (key.includes("mobile") || key.includes("phone")) profile.mobile = val;
+      else if (key.includes("email")) profile.email = val;
+      else if (key.includes("advisor") || key.includes("counselor")) profile.advisor = val;
+      else if (key.includes("blood")) profile.bloodGroup = val;
+      else if (key.includes("dob") || key.includes("birth")) profile.dob = val;
     }
   });
   return profile;
@@ -1108,7 +1115,7 @@ app.post("/api/fetch", async (req, res) => {
   if (acadProfHtml) {
     try {
       const ap = parseAcademiaProfile(acadProfHtml);
-      for (const key of ["section", "batch", "semester", "dept", "program", "name", "regNo", "mobile"]) {
+      for (const key of ["section", "batch", "semester", "dept", "program", "name", "regNo", "mobile", "email", "advisor", "bloodGroup", "dob"]) {
         if (ap[key] && !["-", "N/A", "Unknown", ""].includes(ap[key])) {
           profile[key] = ap[key];
         }
