@@ -1074,36 +1074,40 @@ app.post("/api/fetch", async (req, res) => {
   };
 
   const email = portal_netid.includes("@") ? portal_netid : `${portal_netid}@srmist.edu.in`;
-  const isAcadAvailable = await checkAcademiaExists(email);
 
-  let acadProfHtml = null;
-  let acadGrid1Html = null;
-  let acadGrid2Html = null;
-
-  if (isAcadAvailable && academia_password && academia_password.trim()) {
-    try {
-      const acadClient = new AcademiaClient(email, academia_password.trim());
-      const authed = await acadClient.authenticate();
-      if (authed) {
-        const [p, g1, g2] = await Promise.all([
-          acadClient.getProfileHtml(),
-          acadClient.getGridHtml("Batch_1"),
-          acadClient.getGridHtml("batch_2")
-        ]);
-        acadProfHtml = p;
-        acadGrid1Html = g1;
-        acadGrid2Html = g2;
+  const acadTask = async () => {
+    const isAvailable = await checkAcademiaExists(email);
+    if (isAvailable && academia_password && academia_password.trim()) {
+      try {
+        const acadClient = new AcademiaClient(email, academia_password.trim());
+        const authed = await acadClient.authenticate();
+        if (authed) {
+          const [p, g1, g2] = await Promise.all([
+            acadClient.getProfileHtml(),
+            acadClient.getGridHtml("Batch_1"),
+            acadClient.getGridHtml("batch_2")
+          ]);
+          return { isAvailable: true, profHtml: p, g1Html: g1, g2Html: g2 };
+        }
+      } catch (e) {
+        console.error("Academia fetch error:", e.message);
       }
-    } catch (e) {
-      console.error("Academia fetch error:", e.message);
     }
-  }
+    return { isAvailable, profHtml: null, g1Html: null, g2Html: null };
+  };
 
-  const [marksData, ttHtml, profHtml] = await Promise.all([
+  // Dual Portal Parallel Execution: Run Portal and Academia tasks simultaneously
+  const [marksData, ttHtml, profHtml, acadRes] = await Promise.all([
     fetchMarks(),
     fetchTimetable(),
-    fetchProfile()
+    fetchProfile(),
+    acadTask()
   ]);
+
+  const isAcadAvailable = acadRes ? acadRes.isAvailable : false;
+  const acadProfHtml = acadRes ? acadRes.profHtml : null;
+  const acadGrid1Html = acadRes ? acadRes.g1Html : null;
+  const acadGrid2Html = acadRes ? acadRes.g2Html : null;
 
   const { courses: attCourses } = parseAttendance(attHtml);
   const profile = parseProfile(profHtml);
