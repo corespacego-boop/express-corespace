@@ -588,10 +588,12 @@ app.get("/api/captcha", async (req, res) => {
     const randomDelimiter = delimMatch ? delimMatch[1] : "0000";
 
     const loginFormFields = {};
-    const inputMatches = text.matchAll(/<input[^>]*name=['"]([^'"]+)['"][^>]*>/gi);
-    for (const match of inputMatches) {
-      loginFormFields[match[1]] = "";
-    }
+    const $loginPage = cheerio.load(text);
+    $loginPage("input[name]").each((_, el) => {
+      const name = $loginPage(el).attr("name");
+      const val = $loginPage(el).attr("value") || "";
+      if (name) loginFormFields[name] = val;
+    });
 
     const captchaMatch = text.match(/SCaptchaServlet[^'" ]*/);
     let captchaUrl = null;
@@ -720,7 +722,8 @@ app.post("/api/fetch", async (req, res) => {
         "Content-Type": "application/x-www-form-urlencoded",
         "Cookie": jar.toHeaderString()
       },
-      maxRedirects: 5,
+      maxRedirects: 0,
+      validateStatus: (status) => status >= 200 && status < 400,
       timeout: 20000
     });
     jar.updateFromHeaders(loginResp.headers);
@@ -732,7 +735,7 @@ app.post("/api/fetch", async (req, res) => {
   const body = loginResp.data || "";
   let attHtml = null;
 
-  // Verify whether login succeeded or returned an authentication failure
+  // Check if response was a direct success HTML or redirect
   const isDirectSuccess = typeof body === "string" && (
     body.includes("logout.jsp") ||
     body.toLowerCase().includes("attendance") ||
