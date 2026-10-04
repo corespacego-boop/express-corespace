@@ -1155,7 +1155,7 @@ app.post("/api/fetch", async (req, res) => {
     }
   }
 
-  const { schedule: portalSchedule } = parseTimetable(ttHtml);
+  const { schedule: portalSchedule, coursesMap: portalCoursesMap } = parseTimetable(ttHtml);
 
   let acadSchedule = {};
   if (acadGrid1Html) {
@@ -1180,7 +1180,7 @@ app.post("/api/fetch", async (req, res) => {
     success: true,
     is_academia_available: isAcadAvailable,
     profile,
-    courses: {},
+    courses: portalCoursesMap || {},
     attendance: attCourses,
     marks: marksData || [],
     timetable: {
