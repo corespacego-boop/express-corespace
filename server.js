@@ -654,6 +654,73 @@ function parseAcademiaProfile(html) {
   return profile;
 }
 
+function parseAcademiaGrid(html) {
+  if (!html) return {};
+  const $ = cheerio.load(html);
+  const schedule = {};
+
+  let gridTable = null;
+  $("table").each((_, table) => {
+    const txt = $(table).text().toLowerCase();
+    if (txt.includes("day 1") || txt.includes("08:00") || txt.includes("from")) {
+      gridTable = $(table);
+      return false;
+    }
+  });
+
+  if (gridTable) {
+    let timeHeaders = [];
+    const thead = gridTable.find("thead");
+    const trs = thead.length > 0 ? thead.find("tr") : gridTable.find("tr");
+
+    trs.each((_, tr) => {
+      const rowTimes = [];
+      $(tr).find("th, td").each((_, cell) => {
+        const raw = $(cell).text().replace(/\s+/g, " ").trim();
+        const m = raw.match(/(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/);
+        if (m) {
+          rowTimes.push(`${m[1]} - ${m[2]}`);
+        }
+      });
+      if (rowTimes.length > 0) {
+        timeHeaders = rowTimes;
+        return false;
+      }
+    });
+
+    const tbody = gridTable.find("tbody").length > 0 ? gridTable.find("tbody") : gridTable;
+    tbody.find("tr").each((_, tr) => {
+      const tds = $(tr).find("td");
+      if (tds.length === 0) return;
+
+      const dayText = $(tds[0]).text().replace(/\s+/g, " ").trim();
+      const dayMatch = dayText.match(/Day\s*(\d+)/i);
+      if (!dayMatch) return;
+
+      const dayName = `Day ${dayMatch[1]}`;
+      schedule[dayName] = {};
+
+      tds.slice(1).each((i, td) => {
+        if (i >= timeHeaders.length) return;
+        const timeSlot = timeHeaders[i];
+        const rawVal = $(td).text().replace(/\s+/g, " ").trim();
+        if (!rawVal || rawVal === "-" || rawVal === "--") return;
+
+        const code = rawVal.trim();
+        schedule[dayName][timeSlot] = {
+          code: code,
+          course: code,
+          courseCode: code,
+          name: code,
+          time: timeSlot
+        };
+      });
+    });
+  }
+
+  return schedule;
+}
+
 // Health check endpoints
 const healthHandler = (req, res) => {
   res.status(200).json({ status: "healthy" });
@@ -1053,6 +1120,14 @@ app.post("/api/fetch", async (req, res) => {
 
   const { schedule: portalSchedule } = parseTimetable(ttHtml);
 
+  let acadSchedule = {};
+  if (acadGrid1Html) {
+    acadSchedule = parseAcademiaGrid(acadGrid1Html);
+  }
+  if (Object.keys(acadSchedule).length === 0 && acadGrid2Html) {
+    acadSchedule = parseAcademiaGrid(acadGrid2Html);
+  }
+
   // Load calendar_data.json
   let calendarData = [];
   try {
@@ -1072,7 +1147,7 @@ app.post("/api/fetch", async (req, res) => {
     attendance: attCourses,
     marks: marksData || [],
     timetable: {
-      academia: {},
+      academia: acadSchedule,
       portal: portalSchedule
     },
     calendar: calendarData
