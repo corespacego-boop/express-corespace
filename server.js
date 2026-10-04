@@ -10,6 +10,7 @@ const app = express();
 app.use(cors({ origin: "*", credentials: true }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(express.static(path.join(__dirname, "public")));
 
 const PORTAL_LOGIN_URL = "https://sp.srmist.edu.in/srmiststudentportal/students/loginManager/youLogin.jsp";
 const PORTAL_BASE_URL = "https://sp.srmist.edu.in/srmiststudentportal";
@@ -530,6 +531,9 @@ const healthHandler = (req, res) => {
 };
 
 app.get("/", (req, res) => {
+  if (req.accepts("html")) {
+    return res.sendFile(path.join(__dirname, "public", "index.html"));
+  }
   res.status(200).json({
     status: "healthy",
     service: "Corespace Unified API",
