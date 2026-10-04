@@ -950,26 +950,55 @@ app.post("/api/fetch", async (req, res) => {
   if (isDirectSuccess) {
     attHtml = body;
   } else {
-    try {
-      const attRes = await axios.get(PORTAL_ATT_URL, {
-        headers: {
-          ...DEFAULT_HEADERS,
-          "Cookie": jar.toHeaderString()
-        },
-        timeout: 15000
-      });
-      jar.updateFromHeaders(attRes.headers);
-      const attBody = attRes.data || "";
-      if (
-        attRes.status === 200 &&
-        !attBody.toLowerCase().includes("youlogin") &&
-        !attBody.toLowerCase().includes("loginform") &&
-        !attBody.toLowerCase().includes("thegr8loginloader")
-      ) {
-        attHtml = attBody;
+    const redirectLoc = loginResp.headers["location"];
+    if (redirectLoc) {
+      try {
+        const fullRedirectUrl = redirectLoc.startsWith("/")
+          ? `https://sp.srmist.edu.in${redirectLoc}`
+          : (redirectLoc.startsWith("http") ? redirectLoc : `${PORTAL_BASE_URL}/${redirectLoc}`);
+        const redirRes = await axios.get(fullRedirectUrl, {
+          headers: {
+            ...DEFAULT_HEADERS,
+            "Cookie": jar.toHeaderString()
+          },
+          timeout: 15000
+        });
+        jar.updateFromHeaders(redirRes.headers);
+        const redirBody = redirRes.data || "";
+        if (
+          redirRes.status === 200 &&
+          typeof redirBody === "string" &&
+          (redirBody.toLowerCase().includes("attendance") || redirBody.includes("logout.jsp"))
+        ) {
+          attHtml = redirBody;
+        }
+      } catch (e) {
+        // Ignored
       }
-    } catch (e) {
-      // Ignored
+    }
+
+    if (!attHtml) {
+      try {
+        const attRes = await axios.get(PORTAL_ATT_URL, {
+          headers: {
+            ...DEFAULT_HEADERS,
+            "Cookie": jar.toHeaderString()
+          },
+          timeout: 15000
+        });
+        jar.updateFromHeaders(attRes.headers);
+        const attBody = attRes.data || "";
+        if (
+          attRes.status === 200 &&
+          !attBody.toLowerCase().includes("youlogin") &&
+          !attBody.toLowerCase().includes("loginform") &&
+          !attBody.toLowerCase().includes("thegr8loginloader")
+        ) {
+          attHtml = attBody;
+        }
+      } catch (e) {
+        // Ignored
+      }
     }
   }
 
