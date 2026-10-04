@@ -534,6 +534,126 @@ async function checkAcademiaExists(email) {
   }
 }
 
+class AcademiaClient {
+  constructor(email, password) {
+    this.email = email;
+    this.password = password;
+    this.jar = new CookieJar();
+    this.headers = {
+      "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
+      "Origin": "https://academia.srmist.edu.in",
+      "Referer": "https://academia.srmist.edu.in/"
+    };
+  }
+
+  async authenticate() {
+    try {
+      const initRes = await axios.get(
+        "https://academia.srmist.edu.in/accounts/p/10002227248/signin?hide_fp=true&orgtype=40&service_language=en&css_url=/49910842/academia-academic-services/downloadPortalCustomCss/login&dcc=true",
+        { headers: this.headers, timeout: 10000 }
+      );
+      this.jar.updateFromHeaders(initRes.headers);
+      const cookiesDict = this.jar.toDict();
+      const csrf = cookiesDict["iamcsr"];
+      if (!csrf) return false;
+
+      const lookupUrl = `https://academia.srmist.edu.in/accounts/p/40-10002227248/signin/v2/lookup/${this.email}`;
+      await axios.post(
+        lookupUrl,
+        {},
+        {
+          headers: {
+            ...this.headers,
+            "Cookie": this.jar.toHeaderString(),
+            "X-ZCSRF-TOKEN": `iamcsrcoo=${csrf}`
+          },
+          timeout: 10000
+        }
+      );
+
+      const passUrl = `https://academia.srmist.edu.in/accounts/p/40-10002227248/signin/v2/password`;
+      const passRes = await axios.post(
+        passUrl,
+        new URLSearchParams({ password: this.password }).toString(),
+        {
+          headers: {
+            ...this.headers,
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Cookie": this.jar.toHeaderString(),
+            "X-ZCSRF-TOKEN": `iamcsrcoo=${csrf}`
+          },
+          maxRedirects: 0,
+          validateStatus: s => s >= 200 && s < 400,
+          timeout: 10000
+        }
+      );
+      this.jar.updateFromHeaders(passRes.headers);
+
+      try {
+        const pRes = await axios.get("https://academia.srmist.edu.in/portal/10002227248/page/Academic_Planner_2024_25_Student", {
+          headers: { ...this.headers, "Cookie": this.jar.toHeaderString() },
+          timeout: 10000
+        });
+        this.jar.updateFromHeaders(pRes.headers);
+      } catch (e) {
+        // Ignored
+      }
+      return true;
+    } catch (e) {
+      console.error("Academia auth error:", e.message);
+      return false;
+    }
+  }
+
+  async getProfileHtml() {
+    try {
+      const res = await axios.get("https://academia.srmist.edu.in/portal/10002227248/page/My_Profile", {
+        headers: { ...this.headers, "Cookie": this.jar.toHeaderString() },
+        timeout: 10000
+      });
+      return res.data;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async getGridHtml(batch) {
+    try {
+      const url = `https://academia.srmist.edu.in/portal/10002227248/page/My_Time_Table_${batch}`;
+      const res = await axios.get(url, {
+        headers: { ...this.headers, "Cookie": this.jar.toHeaderString() },
+        timeout: 10000
+      });
+      return res.data;
+    } catch (e) {
+      return null;
+    }
+  }
+}
+
+function parseAcademiaProfile(html) {
+  if (!html) return {};
+  const $ = cheerio.load(html);
+  const profile = {};
+  $("tr, div, table").each((_, el) => {
+    const txt = $(el).text().trim().replace(/\s+/g, " ");
+    if (txt.includes(":")) {
+      const parts = txt.split(":");
+      const key = parts[0].trim().toLowerCase();
+      const val = parts.slice(1).join(":").trim();
+      if (key.includes("section")) profile.section = val;
+      else if (key.includes("batch")) profile.batch = val;
+      else if (key.includes("semester")) profile.semester = val;
+      else if (key.includes("department") || key.includes("dept")) profile.dept = val;
+      else if (key.includes("program")) profile.program = val;
+      else if (key.includes("name")) profile.name = val;
+      else if (key.includes("register no") || key.includes("regno")) profile.regNo = val;
+      else if (key.includes("mobile")) profile.mobile = val;
+    }
+  });
+  return profile;
+}
+
 // Health check endpoints
 const healthHandler = (req, res) => {
   res.status(200).json({ status: "healthy" });
@@ -883,17 +1003,54 @@ app.post("/api/fetch", async (req, res) => {
   };
 
   const email = portal_netid.includes("@") ? portal_netid : `${portal_netid}@srmist.edu.in`;
-  const acadCheckPromise = checkAcademiaExists(email);
+  const isAcadAvailable = await checkAcademiaExists(email);
 
-  const [marksData, ttHtml, profHtml, isAcadAvailable] = await Promise.all([
+  let acadProfHtml = null;
+  let acadGrid1Html = null;
+  let acadGrid2Html = null;
+
+  if (isAcadAvailable && academia_password && academia_password.trim()) {
+    try {
+      const acadClient = new AcademiaClient(email, academia_password.trim());
+      const authed = await acadClient.authenticate();
+      if (authed) {
+        const [p, g1, g2] = await Promise.all([
+          acadClient.getProfileHtml(),
+          acadClient.getGridHtml("Batch_1"),
+          acadClient.getGridHtml("batch_2")
+        ]);
+        acadProfHtml = p;
+        acadGrid1Html = g1;
+        acadGrid2Html = g2;
+      }
+    } catch (e) {
+      console.error("Academia fetch error:", e.message);
+    }
+  }
+
+  const [marksData, ttHtml, profHtml] = await Promise.all([
     fetchMarks(),
     fetchTimetable(),
-    fetchProfile(),
-    acadCheckPromise
+    fetchProfile()
   ]);
 
   const { courses: attCourses } = parseAttendance(attHtml);
   const profile = parseProfile(profHtml);
+
+  // Enrich profile with Academia data if available
+  if (acadProfHtml) {
+    try {
+      const ap = parseAcademiaProfile(acadProfHtml);
+      for (const key of ["section", "batch", "semester", "dept", "program", "name", "regNo", "mobile"]) {
+        if (ap[key] && !["-", "N/A", "Unknown", ""].includes(ap[key])) {
+          profile[key] = ap[key];
+        }
+      }
+    } catch (e) {
+      console.error("Academia profile parse error:", e.message);
+    }
+  }
+
   const { schedule: portalSchedule } = parseTimetable(ttHtml);
 
   // Load calendar_data.json
