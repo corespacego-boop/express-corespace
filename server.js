@@ -641,6 +641,7 @@ app.get("/api/captcha", async (req, res) => {
       captcha_field_name: captchaFieldName,
       random_delimiter: randomDelimiter,
       login_form_fields: loginFormFields,
+      exposed_captcha_text: exposedCaptchaText,
       load_ms: Date.now(),
       cookies: cookiesDict
     };
@@ -654,6 +655,7 @@ app.get("/api/captcha", async (req, res) => {
       success: true,
       session_id: sessionId,
       captcha_image: imgB64 ? `data:image/png;base64,${imgB64}` : null,
+      auto_captcha: exposedCaptchaText || null,
       cookies: cookiesDict
     });
   } catch (err) {
@@ -676,9 +678,9 @@ app.post("/api/fetch", async (req, res) => {
     academia_password
   } = req.body || {};
 
-  if (!portal_netid || !portal_password || !portal_captcha) {
+  if (!portal_netid || !portal_password) {
     return res.status(400).json({
-      detail: "portal_netid, portal_password, and portal_captcha are required."
+      detail: "portal_netid and portal_password are required."
     });
   }
 
@@ -691,6 +693,8 @@ app.post("/api/fetch", async (req, res) => {
     sessData = SESSION_STORE.get(portal_cookies["JSESSIONID"]);
     SESSION_STORE.delete(portal_cookies["JSESSIONID"]);
   }
+
+  const effectiveCaptcha = (portal_captcha && portal_captcha.trim()) ? portal_captcha.trim() : (sessData ? sessData.exposed_captcha_text : "");
 
   const jar = new CookieJar(sessData ? sessData.cookies : (portal_cookies || {}));
   const nonce = sessData ? sessData.nonce : null;
@@ -716,7 +720,7 @@ app.post("/api/fetch", async (req, res) => {
   }
   formData.set("username", portal_netid);
   formData.set("password", portal_password);
-  formData.set("captcha", portal_captcha);
+  formData.set("captcha", effectiveCaptcha);
   formData.set("fpPayload", fpPayload);
   formData.set("fpToken", "");
   formData.set("recaptchaToken", "");
