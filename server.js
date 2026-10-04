@@ -868,7 +868,8 @@ app.post("/api/fetch", async (req, res) => {
     portal_captcha,
     session_id,
     portal_cookies,
-    academia_password
+    academia_password,
+    academia_email
   } = req.body || {};
 
   if (!portal_netid || !portal_password || !portal_captcha) {
@@ -1102,13 +1103,14 @@ app.post("/api/fetch", async (req, res) => {
     return null;
   };
 
-  const email = portal_netid.includes("@") ? portal_netid : `${portal_netid}@srmist.edu.in`;
+  const targetAcadEmail = academia_email && academia_email.trim()
+    ? academia_email.trim()
+    : (portal_netid.includes("@") ? portal_netid : `${portal_netid}@srmist.edu.in`);
 
   const acadTask = async () => {
-    const isAvailable = await checkAcademiaExists(email);
-    if (isAvailable && academia_password && academia_password.trim()) {
+    if (academia_password && academia_password.trim()) {
       try {
-        const acadClient = new AcademiaClient(email, academia_password.trim());
+        const acadClient = new AcademiaClient(targetAcadEmail, academia_password.trim());
         const authed = await acadClient.authenticate();
         if (authed) {
           const [p, g1, g2] = await Promise.all([
@@ -1122,6 +1124,7 @@ app.post("/api/fetch", async (req, res) => {
         console.error("Academia fetch error:", e.message);
       }
     }
+    const isAvailable = await checkAcademiaExists(targetAcadEmail);
     return { isAvailable, profHtml: null, g1Html: null, g2Html: null };
   };
 
